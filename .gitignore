@@ -1,0 +1,24 @@
+# Secrets & environment
+.env
+.env.*
+!.env.example
+
+# Local SQLite databases & tokens
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Account dumps & debug artifacts
+*accounts*.txt
+*tokens*.txt
+scratch_*.png
+*.log
+
+# Python / test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/

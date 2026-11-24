@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Outlook Hub — Единая почта</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-logo">@</div>
+          <div>
+            <div class="brand-title">Outlook Hub</div>
+            <div class="brand-sub" id="statsSummary">0 аккаунтов</div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="btnAddAccount">+ Добавить аккаунт</button>
+      </div>
+
+      <nav class="nav-section">
+        <div class="section-label">Общая лента</div>
+        <button class="nav-item active" data-view="all-inbox">
+          <span class="nav-label">Входящие (все)</span>
+          <span class="badge" id="badgeUnreadInbox">0</span>
+        </button>
+        <button class="nav-item" data-view="all-unread">
+          <span class="nav-label">Непрочитанные</span>
+          <span class="badge" id="badgeUnreadAll">0</span>
+        </button>
+        <button class="nav-item" data-view="all-junk">
+          <span class="nav-label">Спам (Junk)</span>
+          <span class="badge badge-muted" id="badgeTotalJunk">0</span>
+        </button>
+        <button class="nav-item" data-view="all-everything">
+          <span class="nav-label">Все письма</span>
+          <span class="badge badge-muted" id="badgeTotalAll">0</span>
+        </button>
+        <button class="nav-item" data-view="vault">
+          <span class="nav-label">База аккаунтов + 2FA</span>
+          <span class="badge badge-muted" id="badgeTotalVault">0</span>
+        </button>
+      </nav>
+
+      <div class="accounts-section">
+        <div class="accounts-header">
+          <span class="section-label">Аккаунты</span>
+          <input
+            type="search"
+            id="accountFilterInput"
+            class="mini-input"
+            placeholder="Фильтр..."
+            autocomplete="off"
+          />
+        </div>
+        <div class="accounts-list" id="accountsList">
+          <div class="empty-hint">Пока нет подключённых ящиков</div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-sm" id="btnOpenSettings">Настройки Azure</button>
+        <a class="btn btn-ghost btn-sm" href="/api/export-tokens" download="outlook-refresh-tokens.json" title="Скачать JSON со всеми refresh_token">
+          Экспорт токенов
+        </a>
+      </div>
+    </aside>
+
+    <!-- Middle Pane: Message List -->
+    <section class="list-pane" id="listPane">
+      <div class="list-toolbar">
+        <div class="search-wrap">
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="Поиск по теме, отправителю, тексту или ящику..."
+            autocomplete="off"
+          />
+        </div>
+        <button class="btn btn-secondary" id="btnSyncAll" title="Обновить все аккаунты">
+          <span class="sync-icon" id="syncSpinner">&#8635;</span>
+          <span>Обновить</span>
+        </button>
+      </div>
+
+      <div class="list-meta-bar">
+        <span id="currentViewTitle">Входящие (все аккаунты)</span>
+        <span class="meta-right" id="syncStatusText">Готово</span>
+      </div>
+
+      <!-- First-run Onboarding Banner (hidden once configured) -->
+      <div class="setup-card hidden" id="setupBanner">
+        <h2>Быстрая настройка (1 раз для всех 20 аккаунтов)</h2>
+        <p class="muted">
+          Microsoft требует бесплатное OAuth2-приложение, чтобы выдавать <code>refresh_token</code>.
+          Настройка занимает ~2 минуты:
+        </p>
+        <ol class="setup-steps">
+          <li>
+            Открой
+            <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">
+              Azure App Registrations
+            </a>
+            → <strong>New registration</strong> (войди под любым своим аккаунтом Microsoft).
+          </li>
+          <li>
+            В пункте <strong>Supported account types</strong> выбери:
+            <em>Accounts in any organizational directory and personal Microsoft accounts</em>.
+          </li>
+          <li>
+            В <strong>Redirect URI</strong> выбери платформу
+            <strong>Public client/native (mobile &amp; desktop)</strong> и вставь:
+            <div class="copy-row">
+              <code id="onboardingRedirectUri">http://localhost:8765/callback</code>
+              <button class="btn btn-ghost btn-xs" id="btnCopyRedirectOnboarding">Копировать</button>
+            </div>
+          </li>
+          <li>
+            Нажми <strong>Register</strong>, скопируй <strong>Application (client) ID</strong> и вставь ниже:
+          </li>
+        </ol>
+        <div class="inline-form">
+          <input type="text" id="quickClientId" placeholder="Вставь Application (client) ID..." />
+          <button class="btn btn-primary" id="btnSaveQuickClientId">Сохранить</button>
+        </div>
+      </div>
+
+      <div class="messages-list" id="messagesList">
+        <div class="empty-state">
+          <div class="empty-title">Писем пока нет</div>
+          <div class="muted">Добавь аккаунты слева — все входящие появятся в этой ленте.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Pane: Message Viewer -->
+    <main class="reader-pane" id="readerPane">
+      <div class="reader-empty" id="readerEmpty">
+        <div class="empty-title">Выбери письмо</div>
+        <div class="muted">Кликни по любому письму в списке, чтобы прочитать его содержимое.</div>
+      </div>
+
+      <div class="reader-content hidden" id="readerContent">
+        <div class="reader-header">
+          <div class="reader-top-row">
+            <span class="account-pill" id="readerAccountPill"></span>
+            <span class="folder-pill hidden" id="readerFolderPill">Спам</span>
+            <div class="reader-actions">
+              <button class="btn btn-ghost btn-xs" id="btnToggleBodyMode">Текст</button>
+              <button class="btn btn-ghost btn-xs" id="btnReloadBody">Обновить</button>
+              <a class="btn btn-ghost btn-xs hidden" id="btnOpenWebLink" target="_blank" rel="noopener">
+                Открыть в Outlook &#8599;
+              </a>
+            </div>
+          </div>
+          <h1 class="reader-subject" id="readerSubject"></h1>
+          <div class="reader-meta">
+            <div><span class="meta-key">От:</span> <span id="readerFrom"></span></div>
+            <div><span class="meta-key">Кому:</span> <span id="readerTo"></span></div>
+            <div><span class="meta-key">Дата:</span> <span id="readerDate"></span></div>
+          </div>
+        </div>
+        <div class="reader-body-wrap" id="readerBodyWrap">
+          <div class="reader-loading hidden" id="readerLoading">Загружаю письмо...</div>
+          <iframe class="reader-iframe hidden" id="readerIframe" sandbox=""></iframe>
+          <pre class="reader-text hidden" id="readerText"></pre>
+        </div>
+      </div>
+    </main>
+
+    <!-- Vault Pane: Account Cards + Live 2FA -->
+    <section class="vault-pane hidden" id="vaultPane">
+      <div class="vault-toolbar">
+        <div>
+          <h2 class="vault-title">База аккаунтов и живые 2FA-коды</h2>
+          <div class="muted small">
+            Кликай по полям для копирования; нажми «Подключить OAuth», чтобы привязать почту без повторных входов.
+          </div>
+        </div>
+        <div class="vault-controls">
+          <input
+            type="search"
+            id="vaultSearchInput"
+            class="vault-search"
+            placeholder="Поиск по email или логину..."
+            autocomplete="off"
+          />
+          <button class="btn btn-secondary btn-sm" id="btnToggleVaultSecrets">Показать пароли</button>
+          <button class="btn btn-success btn-sm" id="btnAutoLoginAllVault" title="Автоматически выполнить вход для всех неподключённых аккаунтов">⚡ Авто-вход для всех</button>
+          <button class="btn btn-primary btn-sm" id="btnOpenVaultImport">+ Загрузить список</button>
+        </div>
+      </div>
+
+      <div class="setup-card hidden" id="vaultSetupBanner">
+        <h2>Почему OAuth ещё не запускается</h2>
+        <p class="muted small">
+          Microsoft отключила обычный вход по паролю (IMAP) для <code>@outlook.com</code>.
+          Чтобы кнопка <strong>«Подключить OAuth»</strong> открывала вход Microsoft и автоматически парсила письма,
+          нужно один раз указать <strong>Application (client) ID</strong> (один на все 20+ ящиков):
+        </p>
+        <ol class="setup-steps">
+          <li>
+            Открой
+            <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">
+              Azure App Registrations &#8599;
+            </a>
+            → <strong>New registration</strong>.
+          </li>
+          <li>
+            <strong>Supported account types</strong>: выбери
+            <em>Accounts in any organizational directory and personal Microsoft accounts</em>.
+          </li>
+          <li>
+            <strong>Redirect URI</strong>: платформа <strong>Public client/native (mobile &amp; desktop)</strong> →
+            <code id="vaultRedirectUri">http://localhost:8765/callback</code>
+            <button class="btn btn-ghost btn-xs" id="btnCopyRedirectVault">Копировать</button>
+          </li>
+          <li>Нажми <strong>Register</strong>, скопируй <strong>Application (client) ID</strong> и вставь ниже:</li>
+        </ol>
+        <div class="inline-form">
+          <input type="text" id="vaultQuickClientId" placeholder="Вставь Application (client) ID..." />
+          <button class="btn btn-primary" id="btnSaveVaultClientId">Сохранить</button>
+        </div>
+      </div>
+
+      <div class="vault-grid" id="vaultGrid">
+        <div class="empty-state">
+          <div class="empty-title">База аккаунтов пуста</div>
+          <div class="muted">Нажми «+ Загрузить список» и вставь строки формата <code>лог:пасс:почта:пасс:резерв:пасс:2фа</code>.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal: Import Vault List -->
+  <div class="modal-backdrop hidden" id="modalImportVault">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Загрузить список аккаунтов</h3>
+        <button class="icon-btn" data-close-modal="modalImportVault">&times;</button>
+      </div>
+      <p class="muted small">
+        Вставь строки в формате <code>tt_login:tt_pass:outlook_email:outlook_pass:recovery:pass:2fa</code>
+        или <code>outlook_email:outlook_pass</code> (заголовки пересланных сообщений из Telegram пропускаются автоматически).
+      </p>
+      <label class="field">
+        <span>Список аккаунтов</span>
+        <textarea id="vaultImportTextarea" rows="8" placeholder="user123:pass:box@outlook.com:pass:rec@mail.com:pass:BASE32SECRET"></textarea>
+      </label>
+      <label class="checkbox-row" style="margin: 8px 0 14px 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+        <input type="checkbox" id="chkVaultAutoLogin" checked />
+        <span class="small" style="font-weight: 500; color: #38bdf8;">⚡ Сразу запустить авто-вход (Step 1) после импорта</span>
+      </label>
+      <div class="modal-actions-row">
+        <button class="btn btn-primary" id="btnSubmitVaultImport">Добавить в базу</button>
+        <button class="btn btn-ghost" data-close-modal="modalImportVault">Отмена</button>
+      </div>
+      <div class="oauth-status hidden" id="vaultImportStatus"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Account -->
+  <div class="modal-backdrop hidden" id="modalAddAccount">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Добавить аккаунт Outlook</h3>
+        <button class="icon-btn" data-close-modal="modalAddAccount">&times;</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="tabOAuth">Вход Microsoft</button>
+        <button class="tab" data-tab="tabDevice">Код устройства (VPS)</button>
+        <button class="tab" data-tab="tabImport">Импорт refresh_token</button>
+      </div>
+
+      <div class="tab-panel" id="tabOAuth">
+        <p class="muted small">
+          После входа Outlook Hub сохранит <code>refresh_token</code> локально и больше не будет просить пароль.
+          Для 10–20 аккаунтов удобнее копировать ссылку и открывать её в <strong>окне Инкогнито</strong>, чтобы браузер не путал сессии.
+        </p>
+        <label class="field">
+          <span>Email аккаунта (необязательно — подставится в форму входа)</span>
+          <input type="email" id="oauthLoginHint" placeholder="example@outlook.com" autocomplete="off" />
+        </label>
+        <div class="modal-actions-row">
+          <button class="btn btn-primary" id="btnStartOAuthPopup">Открыть вход Microsoft</button>
+          <button class="btn btn-secondary" id="btnCopyOAuthLink">Скопировать ссылку (для Инкогнито)</button>
+        </div>
+        <div class="oauth-status hidden" id="oauthStatusBox"></div>
+      </div>
+
+      <div class="tab-panel hidden" id="tabDevice">
+        <p class="muted small">
+          Работает <strong>без Redirect URI</strong> (идеально для VPS по IP, телефона или антика).
+          В Entra нужно 1 раз включить <em>Authentication → Allow public client flows = Yes</em>.
+        </p>
+        <div class="modal-actions-row">
+          <button class="btn btn-primary" id="btnStartDeviceCode">Получить код устройства</button>
+        </div>
+        <div class="device-box hidden" id="deviceCodeBox">
+          <div class="vault-label">1. Введи этот код на странице Microsoft</div>
+          <div class="device-code-row">
+            <span class="device-code-val" id="deviceUserCode">----</span>
+            <button class="btn btn-primary btn-xs" id="btnCopyDeviceCode">Коп код</button>
+            <a class="btn btn-secondary btn-xs" id="linkDeviceVerify" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener">
+              Открыть microsoft.com/devicelogin &#8599;
+            </a>
+          </div>
+        </div>
+        <div class="oauth-status hidden" id="deviceStatusBox"></div>
+      </div>
+
+      <div class="tab-panel hidden" id="tabImport">
+        <p class="muted small">
+          Поддерживает <strong>Graph API и IMAP XOAUTH2</strong> (определяется автоматически).
+          Можно вставить <strong>один <code>refresh_token</code></strong> или сразу <strong>список строк</strong> формата
+          <code>email:pass:refresh_token:client_id</code>.
+        </p>
+        <label class="field">
+          <span>Refresh Token или список строк *</span>
+          <textarea id="importRefreshToken" rows="4" placeholder="M.C512_... или по строке: box@outlook.com:pass:M.C512_...:client-uuid"></textarea>
+        </label>
+        <div class="two-col">
+          <label class="field">
+            <span>Client ID (опционально)</span>
+            <input type="text" id="importClientId" placeholder="Из настроек Azure" />
+          </label>
+          <label class="field">
+            <span>Email (опционально)</span>
+            <input type="email" id="importEmail" placeholder="Автоопределение" />
+          </label>
+        </div>
+        <div class="modal-actions-row">
+          <button class="btn btn-primary" id="btnSubmitImport">Проверить и добавить</button>
+        </div>
+        <div class="oauth-status hidden" id="importStatusBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Azure Settings -->
+  <div class="modal-backdrop hidden" id="modalSettings">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Настройки Azure и синхронизации</h3>
+        <button class="icon-btn" data-close-modal="modalSettings">&times;</button>
+      </div>
+
+      <p class="muted small" style="margin-top:0;">
+        Где взять Client ID: открой
+        <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">
+          Azure App Registrations &#8599;
+        </a>
+        → <strong>New registration</strong> → тип <em>Multitenant and personal Microsoft accounts</em> →
+        Redirect URI <strong>Mobile &amp; desktop</strong> → скопируй <strong>Application (client) ID</strong>.
+      </p>
+
+      <div class="field">
+        <span>Redirect URI (указать в Azure → Mobile &amp; desktop applications)</span>
+        <div class="copy-row">
+          <code id="settingsRedirectUri">http://localhost:8765/callback</code>
+          <button class="btn btn-ghost btn-xs" id="btnCopyRedirectSettings">Копировать</button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Application (client) ID *</span>
+        <input type="text" id="setClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+      </label>
+
+      <label class="field">
+        <span>Tenant (оставь <code>common</code> для личных + рабочих аккаунтов)</span>
+        <input type="text" id="setTenant" placeholder="common" />
+      </label>
+
+      <label class="field">
+        <span>Client Secret (не нужен для Public client; заполняй только если регистрировал Web-приложение)</span>
+        <input type="password" id="setClientSecret" placeholder="Оставь пустым" autocomplete="new-password" />
+        <span class="field-hint" id="secretStatusHint"></span>
+      </label>
+
+      <div class="two-col">
+        <label class="field">
+          <span>Автообновление (сек)</span>
+          <input type="number" id="setPollInterval" min="15" max="3600" value="60" />
+        </label>
+        <label class="field">
+          <span>Писем на папку</span>
+          <input type="number" id="setMessagesPerFolder" min="5" max="100" value="30" />
+        </label>
+      </div>
+
+      <label class="checkbox-field">
+        <input type="checkbox" id="setAutoSync" checked />
+        <span>Автоматически проверять новые письма в фоне</span>
+      </label>
+
+      <label class="checkbox-field">
+        <input type="checkbox" id="setSyncJunk" checked />
+        <span>Также загружать папку «Спам (Junk)» (там часто бывают коды)</span>
+      </label>
+
+      <div class="modal-actions-row">
+        <button class="btn btn-primary" id="btnSaveSettings">Сохранить настройки</button>
+        <button class="btn btn-ghost" data-close-modal="modalSettings">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Recovery Mail Viewer (IMAP / Firstmail) -->
+  <div class="modal-backdrop hidden" id="modalRecoveryMail">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div>
+          <h3 id="recoveryModalTitle">Резервная почта</h3>
+          <div class="muted small" id="recoveryModalSub"></div>
+        </div>
+        <button class="icon-btn" data-close-modal="modalRecoveryMail">&times;</button>
+      </div>
+
+      <div class="recovery-toolbar">
+        <input
+          type="text"
+          id="recoveryImapHostInput"
+          placeholder="IMAP сервер (по умолч. imap.firstmail.ltd)"
+        />
+        <button class="btn btn-primary btn-sm" id="btnReloadRecoveryModal">Обновить письма</button>
+      </div>
+
+      <div class="recovery-messages" id="recoveryMessagesList"></div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
